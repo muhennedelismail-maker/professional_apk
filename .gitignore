@@ -1,0 +1,10 @@
+.agent/
+__pycache__/
+*.pyc
+generated/
+.DS_Store
+.pytest_cache/
+.coverage
+dist/
+build/
+node_modules/

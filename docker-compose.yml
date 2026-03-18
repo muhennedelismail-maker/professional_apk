@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  local-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-ollama-agent
+    environment:
+      AGENT_HOST: 0.0.0.0
+      AGENT_PORT: 8765
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      DEFAULT_CHAT_MODEL: qwen2.5-coder:7b
+      CODE_MODEL: qwen2.5-coder:7b
+      VISION_MODEL: qwen2.5vl:latest
+      EMBEDDING_MODEL: nomic-embed-text
+      DEFAULT_AGENT_MODE: general
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./.agent:/app/.agent
+      - ./knowledge:/app/knowledge
+      - ./generated:/app/generated
+    restart: unless-stopped
