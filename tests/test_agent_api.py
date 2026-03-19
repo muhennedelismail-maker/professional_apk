@@ -32,6 +32,7 @@ class AgentTests(unittest.TestCase):
             data_dir=self.workspace / ".agent",
             uploads_dir=self.workspace / ".agent" / "uploads",
             knowledge_dir=self.workspace / "knowledge",
+            downloads_dir=self.workspace / "downloads",
             db_path=self.workspace / ".agent" / "agent.db",
             host="127.0.0.1",
             port=8765,
@@ -42,9 +43,12 @@ class AgentTests(unittest.TestCase):
             embedding_model="embed",
             max_tool_steps=2,
             default_mode="general",
+            internet_enabled=True,
+            max_download_size_mb=10,
         )
         settings.data_dir.mkdir()
         settings.uploads_dir.mkdir()
+        settings.downloads_dir.mkdir()
         self.db = Database(settings.db_path)
         self.agent = LocalAgent(settings, self.db)
         self.agent.ollama = FakeOllama()

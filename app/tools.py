@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .internet_client import InternetClient, InternetError
+
 
 class ToolError(RuntimeError):
     pass
@@ -15,14 +17,32 @@ class ToolError(RuntimeError):
 class SafeTools:
     SAFE_COMMANDS = {"pwd", "ls", "cat", "head", "tail", "find", "rg", "sed", "wc"}
 
-    def __init__(self, workspace: Path) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        internet_client: InternetClient | None = None,
+        internet_enabled: bool = True,
+        telemetry_hook: Any | None = None,
+        post_download_hook: Any | None = None,
+    ) -> None:
         self.workspace = workspace.resolve()
+        self.internet_client = internet_client
+        self.internet_enabled = internet_enabled
+        self.telemetry_hook = telemetry_hook
+        self.post_download_hook = post_download_hook
 
     def run(self, tool_name: str, args: dict[str, Any], permission_level: str = "none") -> dict[str, Any]:
-        if permission_level == "none":
+        normalized = self._normalize_permission(permission_level)
+        if normalized == "none":
             raise ToolError("Tool execution is disabled.")
-        if tool_name in {"write_file", "patch_file"} and permission_level != "write":
+        if tool_name in {"read_file", "search_workspace", "list_files", "shell"} and normalized not in {"local-read", "local-write", "full"}:
+            raise ToolError("This tool requires local read permission.")
+        if tool_name in {"write_file", "patch_file"} and normalized not in {"local-write", "full"}:
             raise ToolError("This tool requires write permission.")
+        if tool_name in {"web_search", "fetch_url", "fetch_json"} and normalized not in {"internet-read", "internet-download", "full"}:
+            raise ToolError("This tool requires internet read permission.")
+        if tool_name == "download_file" and normalized not in {"internet-download", "full"}:
+            raise ToolError("This tool requires internet download permission.")
         if tool_name == "shell":
             return self.shell(str(args.get("command", "")))
         if tool_name == "read_file":
@@ -39,6 +59,14 @@ class SafeTools:
             return self.search_workspace(str(args.get("query", "")))
         if tool_name == "list_files":
             return self.list_files(str(args.get("path", ".")))
+        if tool_name == "web_search":
+            return self.web_search(str(args.get("query", "")), int(args.get("limit", 5)))
+        if tool_name == "fetch_url":
+            return self.fetch_url(str(args.get("url", "")))
+        if tool_name == "fetch_json":
+            return self.fetch_json(str(args.get("url", "")))
+        if tool_name == "download_file":
+            return self.download_file(str(args.get("url", "")), args.get("filename"))
         raise ToolError(f"Unsupported tool: {tool_name}")
 
     def shell(self, command: str) -> dict[str, Any]:
@@ -127,11 +155,67 @@ class SafeTools:
                 break
         return {"path": rel_path, "entries": entries}
 
+    def web_search(self, query: str, limit: int = 5) -> dict[str, Any]:
+        self._require_internet()
+        if not query.strip():
+            raise ToolError("Query is empty.")
+        try:
+            result = self.internet_client.search_web(query, limit=limit) if self.internet_client else {}
+        except InternetError as exc:
+            raise ToolError(str(exc)) from exc
+        self._record_telemetry("internet_search", result)
+        return result
+
+    def fetch_url(self, url: str) -> dict[str, Any]:
+        self._require_internet()
+        try:
+            result = self.internet_client.fetch_url(url) if self.internet_client else {}
+        except InternetError as exc:
+            raise ToolError(str(exc)) from exc
+        self._record_telemetry("internet_fetch_url", {"url": url, "status": result.get("status"), "content_type": result.get("content_type")})
+        return result
+
+    def fetch_json(self, url: str) -> dict[str, Any]:
+        self._require_internet()
+        try:
+            result = self.internet_client.fetch_json(url) if self.internet_client else {}
+        except InternetError as exc:
+            raise ToolError(str(exc)) from exc
+        self._record_telemetry("internet_fetch_json", {"url": url, "status": result.get("status")})
+        return result
+
+    def download_file(self, url: str, filename: str | None = None) -> dict[str, Any]:
+        self._require_internet()
+        try:
+            result = self.internet_client.download_file(url, filename=filename) if self.internet_client else {}
+        except InternetError as exc:
+            raise ToolError(str(exc)) from exc
+        self._record_telemetry("internet_download", result)
+        if self.post_download_hook:
+            self.post_download_hook(result)
+        return result
+
     def _resolve(self, rel_path: str) -> Path:
         candidate = (self.workspace / rel_path).resolve()
         if self.workspace not in candidate.parents and candidate != self.workspace:
             raise ToolError("Path escapes the workspace.")
         return candidate
+
+    def _require_internet(self) -> None:
+        if not self.internet_enabled or not self.internet_client:
+            raise ToolError("Internet access is disabled in the current configuration.")
+
+    def _record_telemetry(self, kind: str, payload: dict[str, Any]) -> None:
+        if self.telemetry_hook:
+            self.telemetry_hook(kind, payload)
+
+    @staticmethod
+    def _normalize_permission(permission_level: str) -> str:
+        mapping = {
+            "read": "local-read",
+            "write": "local-write",
+        }
+        return mapping.get(permission_level, permission_level)
 
 
 def format_tool_result(result: dict[str, Any]) -> str:

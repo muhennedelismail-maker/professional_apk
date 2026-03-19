@@ -10,6 +10,7 @@ from typing import Any
 
 from .config import Settings
 from .db import Database
+from .internet_client import InternetClient
 from .memory import MemoryStore
 from .ollama_client import OllamaClient, OllamaError
 from .planner import TaskPlanner
@@ -29,6 +30,14 @@ AGENT_MODES = {
     "vision": "Vision mode. Inspect images carefully, mention uncertainty, and extract visible text when possible.",
     "manager": "Project manager mode. Prefer milestones, priorities, risks, and execution sequencing.",
 }
+PERMISSION_OPTIONS = [
+    "none",
+    "local-read",
+    "local-write",
+    "internet-read",
+    "internet-download",
+    "full",
+]
 
 
 class LocalAgent:
@@ -36,10 +45,24 @@ class LocalAgent:
         self.settings = settings
         self.db = db
         self.ollama = OllamaClient(settings.ollama_base_url)
+        self.internet = InternetClient(settings.downloads_dir, max_download_size_mb=settings.max_download_size_mb)
         self.router = ModelRouter(settings)
         self.memory = MemoryStore(db)
-        self.rag = RagIndex(db, settings.knowledge_dir, settings.workspace, self.ollama, settings.embedding_model)
-        self.tools = SafeTools(settings.workspace)
+        self.rag = RagIndex(
+            db,
+            settings.knowledge_dir,
+            settings.downloads_dir,
+            settings.workspace,
+            self.ollama,
+            settings.embedding_model,
+        )
+        self.tools = SafeTools(
+            settings.workspace,
+            internet_client=self.internet,
+            internet_enabled=settings.internet_enabled,
+            telemetry_hook=self.db.add_telemetry,
+            post_download_hook=self._handle_downloaded_content,
+        )
         self.templates = TemplateManager(settings.workspace)
         self.project_builder = ProjectBuilder(settings.workspace)
         self.project_executor = ProjectExecutor(settings.workspace)
@@ -228,8 +251,12 @@ class LocalAgent:
                 "code_model": self.settings.code_model,
                 "vision_model": self.settings.vision_model,
                 "embedding_model": self.settings.embedding_model,
+                "internet_enabled": self.settings.internet_enabled,
+                "downloads_dir": str(self.settings.downloads_dir),
+                "max_download_size_mb": self.settings.max_download_size_mb,
             },
             "saved_settings": saved_settings,
+            "permission_options": PERMISSION_OPTIONS,
         }
 
     def apply_template(self, template_id: str, target_dir: str) -> dict[str, Any]:
@@ -419,6 +446,11 @@ class LocalAgent:
         for key, value in preferences.items():
             self.db.set_setting(key, value)
         return {"saved": preferences}
+
+    def _handle_downloaded_content(self, result: dict[str, Any]) -> None:
+        indexed_sidecar = result.get("indexed_sidecar")
+        if indexed_sidecar:
+            self.rag.refresh()
 
     @staticmethod
     def _prepare_run_steps(workflow_steps: list[dict[str, str]]) -> list[dict[str, Any]]:

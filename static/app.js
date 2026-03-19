@@ -78,6 +78,10 @@ async function refreshDashboard() {
   models.innerHTML = `<strong>النماذج</strong><div class="muted">${data.settings.default_chat_model}<br>${data.settings.code_model}<br>${data.settings.vision_model}</div>`;
   dash.appendChild(models);
 
+  const internet = el("div", "metric");
+  internet.innerHTML = `<strong>الإنترنت</strong><div class="muted">enabled: ${data.settings.internet_enabled}<br>downloads: ${data.settings.downloads_dir}<br>max: ${data.settings.max_download_size_mb} MB</div>`;
+  dash.appendChild(internet);
+
   data.documents.slice(0, 8).forEach((doc) => {
     const item = el("div", "metric");
     item.innerHTML = `<div>${doc.path}</div><div class="muted">${doc.size_bytes} bytes</div>`;
@@ -148,7 +152,7 @@ async function refreshDashboard() {
   });
 
   const settingsBox = el("div", "settings-box");
-  settingsBox.innerHTML = `<div class="muted">default mode: ${data.saved_settings.default_mode || data.settings.default_mode}</div><div class="muted">permission: ${data.saved_settings.permission_level || 'none'}</div>`;
+  settingsBox.innerHTML = `<div class="muted">default mode: ${data.saved_settings.default_mode || data.settings.default_mode}</div><div class="muted">permission: ${data.saved_settings.permission_level || 'none'}</div><div class="muted">internet enabled: ${String(data.settings.internet_enabled)}</div>`;
   const saveButton = el("button", "small-button", "حفظ الإعدادات الحالية");
   saveButton.addEventListener("click", async () => {
     try {

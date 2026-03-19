@@ -11,6 +11,7 @@ class Settings:
     data_dir: Path
     uploads_dir: Path
     knowledge_dir: Path
+    downloads_dir: Path
     db_path: Path
     host: str
     port: int
@@ -21,6 +22,8 @@ class Settings:
     embedding_model: str
     max_tool_steps: int
     default_mode: str
+    internet_enabled: bool
+    max_download_size_mb: int
 
 
 def load_settings() -> Settings:
@@ -28,7 +31,8 @@ def load_settings() -> Settings:
     data_dir = workspace / ".agent"
     uploads_dir = data_dir / "uploads"
     knowledge_dir = workspace / "knowledge"
-    for path in (data_dir, uploads_dir, knowledge_dir):
+    downloads_dir = workspace / "downloads"
+    for path in (data_dir, uploads_dir, knowledge_dir, downloads_dir):
         path.mkdir(parents=True, exist_ok=True)
 
     return Settings(
@@ -36,6 +40,7 @@ def load_settings() -> Settings:
         data_dir=data_dir,
         uploads_dir=uploads_dir,
         knowledge_dir=knowledge_dir,
+        downloads_dir=downloads_dir,
         db_path=data_dir / "agent.db",
         host=os.getenv("AGENT_HOST", "127.0.0.1"),
         port=int(os.getenv("AGENT_PORT", "8765")),
@@ -46,4 +51,6 @@ def load_settings() -> Settings:
         embedding_model=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
         max_tool_steps=int(os.getenv("MAX_TOOL_STEPS", "4")),
         default_mode=os.getenv("DEFAULT_AGENT_MODE", "general"),
+        internet_enabled=os.getenv("INTERNET_ENABLED", "true").lower() == "true",
+        max_download_size_mb=int(os.getenv("MAX_DOWNLOAD_SIZE_MB", "10")),
     )

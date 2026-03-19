@@ -10,6 +10,10 @@ Available tools:
 - patch_file: apply a direct text replacement inside a workspace file
 - search_workspace: search files by keyword in the workspace
 - list_files: list project files inside the workspace
+- web_search: search the public web
+- fetch_url: fetch and extract text from a web page
+- fetch_json: fetch a JSON URL
+- download_file: download a web file into the downloads folder
 
 When you have enough information, answer normally in Arabic unless the user asks otherwise.
 """

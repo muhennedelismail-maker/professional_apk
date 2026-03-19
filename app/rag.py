@@ -29,9 +29,18 @@ class RetrievalHit:
 
 
 class RagIndex:
-    def __init__(self, db: Database, knowledge_dir: Path, workspace: Path, ollama: OllamaClient, embedding_model: str) -> None:
+    def __init__(
+        self,
+        db: Database,
+        knowledge_dir: Path,
+        downloads_dir: Path,
+        workspace: Path,
+        ollama: OllamaClient,
+        embedding_model: str,
+    ) -> None:
         self.db = db
         self.knowledge_dir = knowledge_dir
+        self.downloads_dir = downloads_dir
         self.workspace = workspace
         self.ollama = ollama
         self.embedding_model = embedding_model
@@ -40,11 +49,11 @@ class RagIndex:
         indexed_docs = 0
         indexed_chunks = 0
         embedded_chunks = 0
-        for root in (self.knowledge_dir,):
+        for root in (self.knowledge_dir, self.downloads_dir):
             for path in root.rglob("*"):
                 if not path.is_file():
                     continue
-                if path.suffix.lower() not in {".txt", ".md", ".py", ".js", ".ts", ".json", ".html", ".css"}:
+                if path.suffix.lower() not in {".txt", ".md", ".py", ".js", ".ts", ".json", ".html", ".css", ".xml", ".csv"}:
                     continue
                 text = self._read_text(path)
                 if not text.strip():
