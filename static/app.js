@@ -1,6 +1,11 @@
 let conversationId = null;
+let apiKey = localStorage.getItem("agent_api_key") || "";
 
 async function fetchJson(url, options = {}) {
+  options.headers = options.headers || {};
+  if (apiKey) {
+    options.headers["X-API-Key"] = apiKey;
+  }
   const response = await fetch(url, options);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -56,11 +61,13 @@ async function refreshDashboard() {
   const conversationsPanel = document.querySelector("#conversationsPanel");
   const templatesPanel = document.querySelector("#templatesPanel");
   const settingsPanel = document.querySelector("#settingsPanel");
+  const jobsPanel = document.querySelector("#jobsPanel");
   dash.innerHTML = "";
   runsPanel.innerHTML = "";
   conversationsPanel.innerHTML = "";
   templatesPanel.innerHTML = "";
   settingsPanel.innerHTML = "";
+  jobsPanel.innerHTML = "";
 
   const docs = el("div", "metric");
   docs.innerHTML = `<strong>الملفات المفهرسة</strong><div class="muted">${data.documents.length}</div>`;
@@ -79,7 +86,7 @@ async function refreshDashboard() {
   dash.appendChild(models);
 
   const internet = el("div", "metric");
-  internet.innerHTML = `<strong>الإنترنت</strong><div class="muted">enabled: ${data.settings.internet_enabled}<br>downloads: ${data.settings.downloads_dir}<br>max: ${data.settings.max_download_size_mb} MB</div>`;
+  internet.innerHTML = `<strong>الإنترنت</strong><div class="muted">enabled: ${data.settings.internet_enabled}<br>downloads: ${data.settings.downloads_dir}<br>max: ${data.settings.max_download_size_mb} MB<br>provider: ${data.settings.search_provider}</div>`;
   dash.appendChild(internet);
 
   data.documents.slice(0, 8).forEach((doc) => {
@@ -152,14 +159,21 @@ async function refreshDashboard() {
   });
 
   const settingsBox = el("div", "settings-box");
-  settingsBox.innerHTML = `<div class="muted">default mode: ${data.saved_settings.default_mode || data.settings.default_mode}</div><div class="muted">permission: ${data.saved_settings.permission_level || 'none'}</div><div class="muted">internet enabled: ${String(data.settings.internet_enabled)}</div>`;
+  settingsBox.innerHTML = `<div class="muted">default mode: ${data.saved_settings.default_mode || data.settings.default_mode}</div><div class="muted">permission: ${data.saved_settings.permission_level || 'none'}</div><div class="muted">internet enabled: ${String(data.settings.internet_enabled)}</div><div class="muted">api key enabled: ${String(data.settings.api_key_enabled)}</div>`;
+  const apiKeyInput = document.createElement("input");
+  apiKeyInput.className = "project-input";
+  apiKeyInput.placeholder = "API Key (optional)";
+  apiKeyInput.value = apiKey;
   const saveButton = el("button", "small-button", "حفظ الإعدادات الحالية");
   saveButton.addEventListener("click", async () => {
     try {
       const preferences = {
         default_mode: document.querySelector("#modeSelect").value,
         permission_level: document.querySelector("#permissionSelect").value,
+        api_key: apiKeyInput.value.trim(),
       };
+      apiKey = apiKeyInput.value.trim();
+      localStorage.setItem("agent_api_key", apiKey);
       await fetchJson("/api/settings/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -188,9 +202,16 @@ async function refreshDashboard() {
       addMessage("assistant", `تعذر استيراد المحادثة: ${error.message}`);
     }
   });
+  settingsBox.appendChild(apiKeyInput);
   settingsBox.appendChild(saveButton);
   settingsBox.appendChild(importButton);
   settingsPanel.appendChild(settingsBox);
+
+  data.jobs.slice(0, 8).forEach((job) => {
+    const box = el("div", "run");
+    box.innerHTML = `<div class="run-title">${job.kind}</div><div class="muted">${job.status}</div><div class="muted">${job.id}</div>`;
+    jobsPanel.appendChild(box);
+  });
 }
 
 async function fileToBase64(file) {
@@ -262,6 +283,7 @@ document.querySelector("#buildProjectBtn").addEventListener("click", async () =>
   const projectName = document.querySelector("#projectNameInput").value.trim();
   const targetDir = document.querySelector("#targetDirInput").value.trim() || `generated/${projectName || "new-project"}`;
   const allowExternal = document.querySelector("#allowExternalToggle").checked;
+  const runAsync = document.querySelector("#runAsyncToggle").checked;
   if (!description) {
     addMessage("assistant", "اكتب وصف المشروع أولاً في صندوق الرسالة ثم اضغط بناء المشروع.");
     return;
@@ -276,10 +298,15 @@ document.querySelector("#buildProjectBtn").addEventListener("click", async () =>
         project_name: projectName,
         target_dir: targetDir,
         allow_external: allowExternal,
+        async: runAsync,
       }),
     });
-    conversationId = result.conversation_id;
-    addMessage("assistant", `تم إنشاء المشروع ${result.project_name} داخل ${result.target_dir}`, result.cards || []);
+    if (result.job_id) {
+      addMessage("assistant", `تم وضع مهمة البناء في الخلفية. job: ${result.job_id}`);
+    } else {
+      conversationId = result.conversation_id;
+      addMessage("assistant", `تم إنشاء المشروع ${result.project_name} داخل ${result.target_dir}`, result.cards || []);
+    }
     refreshDashboard();
   } catch (error) {
     addMessage("assistant", `تعذر بناء المشروع: ${error.message}`);
@@ -289,6 +316,7 @@ document.querySelector("#buildProjectBtn").addEventListener("click", async () =>
 document.querySelector("#executeProjectBtn").addEventListener("click", async () => {
   const targetDir = document.querySelector("#targetDirInput").value.trim() || "generated/new-project";
   const allowExternal = document.querySelector("#allowExternalToggle").checked;
+  const runAsync = document.querySelector("#runAsyncToggle").checked;
   addMessage("user", `Execute project pipeline: ${targetDir}`);
   try {
     const result = await fetchJson("/api/projects/execute", {
@@ -298,10 +326,15 @@ document.querySelector("#executeProjectBtn").addEventListener("click", async () 
         target_dir: targetDir,
         allow_external: allowExternal,
         actions: ["install", "run", "smoke"],
+        async: runAsync,
       }),
     });
-    conversationId = result.conversation_id;
-    addMessage("assistant", `نتيجة التنفيذ: ${result.status}`, result.cards || []);
+    if (result.job_id) {
+      addMessage("assistant", `تم وضع مهمة التنفيذ في الخلفية. job: ${result.job_id}`);
+    } else {
+      conversationId = result.conversation_id;
+      addMessage("assistant", `نتيجة التنفيذ: ${result.status}`, result.cards || []);
+    }
     refreshDashboard();
   } catch (error) {
     addMessage("assistant", `تعذر تنفيذ المشروع: ${error.message}`);

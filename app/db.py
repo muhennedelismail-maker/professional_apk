@@ -108,6 +108,16 @@ class Database:
                     value_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    result_json TEXT NOT NULL DEFAULT '{}',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -379,6 +389,49 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute("SELECT key, value_json FROM app_settings ORDER BY key").fetchall()
         return {row["key"]: json.loads(row["value_json"]) for row in rows}
+
+    def create_job(self, job_id: str, kind: str, payload: dict[str, Any]) -> None:
+        now = utc_now()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO jobs(id, kind, status, payload_json, result_json, error_text, created_at, updated_at)
+                VALUES (?, ?, 'queued', ?, '{}', '', ?, ?)
+                """,
+                (job_id, kind, json.dumps(payload), now, now),
+            )
+
+    def update_job(self, job_id: str, status: str, result: dict[str, Any] | None = None, error: str = "") -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status=?, result_json=?, error_text=?, updated_at=?
+                WHERE id=?
+                """,
+                (status, json.dumps(result or {}), error, utc_now(), job_id),
+            )
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        item["payload"] = json.loads(item.pop("payload_json"))
+        item["result"] = json.loads(item.pop("result_json"))
+        return item
+
+    def list_jobs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM jobs ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["payload"] = json.loads(item.pop("payload_json"))
+            item["result"] = json.loads(item.pop("result_json"))
+            items.append(item)
+        return items
 
     @staticmethod
     def _row_to_message(row: sqlite3.Row) -> dict[str, Any]:

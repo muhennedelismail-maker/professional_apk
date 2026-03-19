@@ -24,6 +24,9 @@
 - أدوات إنترنت: بحث ويب، جلب صفحات، جلب JSON، وتنزيل ملفات
 - مجلد `downloads/` مع فهرسة تلقائية للمحتوى النصي المنزّل داخل RAG
 - صلاحيات مستقلة للإنترنت والملفات المحلية
+- background jobs للعمليات الطويلة
+- API key اختياري لحماية نقاط الـ API
+- مزود بحث قابل للتبديل مع allowlist للنطاقات
 
 ## التشغيل
 
@@ -101,6 +104,42 @@ downloads/
 ```bash
 INTERNET_ENABLED=true
 MAX_DOWNLOAD_SIZE_MB=10
+SEARCH_PROVIDER=duckduckgo
+SEARCH_BASE_URL=
+ALLOWED_DOMAINS=
+```
+
+إذا أردت مزود بحث خارجي متوافق مثل `SearXNG`:
+
+```bash
+SEARCH_PROVIDER=searxng
+SEARCH_BASE_URL=https://your-searxng.example.com
+```
+
+## Background Jobs
+
+العمليات الطويلة مثل:
+- `Build Full Project`
+- `Execute Project`
+
+يمكن تشغيلها في الخلفية من الواجهة. كما توجد endpoints داخلية لقراءة حالة job:
+
+```text
+GET /api/jobs/<job_id>
+```
+
+## API Security
+
+يمكن حماية الـ API بمفتاح اختياري:
+
+```bash
+AGENT_API_KEY=your-secret-key
+```
+
+وعند تفعيله يجب تمرير:
+
+```text
+X-API-Key: your-secret-key
 ```
 
 ## القوالب الجاهزة

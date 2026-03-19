@@ -45,6 +45,10 @@ class AgentTests(unittest.TestCase):
             default_mode="general",
             internet_enabled=True,
             max_download_size_mb=10,
+            search_provider="duckduckgo",
+            search_base_url="",
+            allowed_domains=(),
+            api_key="",
         )
         settings.data_dir.mkdir()
         settings.uploads_dir.mkdir()

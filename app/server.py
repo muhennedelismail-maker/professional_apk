@@ -22,16 +22,28 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if not self._authorized():
+            return
         if parsed.path == "/api/health":
             self._json(HTTPStatus.OK, {"ok": True, "ready": AGENT.ensure_ready()})
             return
         if parsed.path == "/api/dashboard":
             self._json(HTTPStatus.OK, AGENT.dashboard())
             return
+        if parsed.path.startswith("/api/jobs/"):
+            job_id = parsed.path.rsplit("/", 1)[-1]
+            job = AGENT.get_job(job_id)
+            if not job:
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Job not found"})
+                return
+            self._json(HTTPStatus.OK, job)
+            return
         self._serve_static(parsed.path)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if not self._authorized():
+            return
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length) or b"{}")
         if parsed.path == "/api/chat":
@@ -57,6 +69,9 @@ class AppHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, response)
             return
         if parsed.path == "/api/projects/build":
+            if payload.get("async"):
+                self._json(HTTPStatus.OK, AGENT.submit_job("build_project", payload))
+                return
             response = AGENT.build_full_project(
                 description=payload.get("description", ""),
                 target_dir=payload.get("target_dir", "generated/project"),
@@ -66,6 +81,9 @@ class AppHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, response)
             return
         if parsed.path == "/api/projects/execute":
+            if payload.get("async"):
+                self._json(HTTPStatus.OK, AGENT.submit_job("execute_project", payload))
+                return
             response = AGENT.execute_project(
                 target_dir=payload.get("target_dir", "generated/project"),
                 actions=payload.get("actions", ["install", "run", "smoke"]),
@@ -121,6 +139,16 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:
         return
+
+    def _authorized(self) -> bool:
+        api_key = AGENT._active_api_key()
+        if not api_key:
+            return True
+        header_value = self.headers.get("X-API-Key", "")
+        if header_value == api_key:
+            return True
+        self._json(HTTPStatus.UNAUTHORIZED, {"error": "Unauthorized"})
+        return False
 
 
 def main() -> None:

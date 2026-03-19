@@ -33,7 +33,7 @@ class InternetClientTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.downloads = Path(self.temp_dir.name) / "downloads"
         self.downloads.mkdir()
-        self.client = InternetClient(self.downloads, max_download_size_mb=1)
+        self.client = InternetClient(self.downloads, max_download_size_mb=1, allowed_domains=("example.com",))
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -60,3 +60,7 @@ class InternetClientTests(unittest.TestCase):
     def test_block_localhost_targets(self) -> None:
         with self.assertRaises(Exception):
             self.client.fetch_url("http://127.0.0.1/private")
+
+    def test_block_non_allowlisted_domain(self) -> None:
+        with self.assertRaises(Exception):
+            self.client.fetch_url("https://not-allowed.test/page")

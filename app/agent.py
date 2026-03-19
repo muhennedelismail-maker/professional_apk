@@ -11,6 +11,7 @@ from typing import Any
 from .config import Settings
 from .db import Database
 from .internet_client import InternetClient
+from .job_queue import JobQueue
 from .memory import MemoryStore
 from .ollama_client import OllamaClient, OllamaError
 from .planner import TaskPlanner
@@ -45,7 +46,14 @@ class LocalAgent:
         self.settings = settings
         self.db = db
         self.ollama = OllamaClient(settings.ollama_base_url)
-        self.internet = InternetClient(settings.downloads_dir, max_download_size_mb=settings.max_download_size_mb)
+        self.internet = InternetClient(
+            settings.downloads_dir,
+            max_download_size_mb=settings.max_download_size_mb,
+            search_provider=settings.search_provider,
+            search_base_url=settings.search_base_url,
+            allowed_domains=settings.allowed_domains,
+        )
+        self.jobs = JobQueue(db)
         self.router = ModelRouter(settings)
         self.memory = MemoryStore(db)
         self.rag = RagIndex(
@@ -254,9 +262,13 @@ class LocalAgent:
                 "internet_enabled": self.settings.internet_enabled,
                 "downloads_dir": str(self.settings.downloads_dir),
                 "max_download_size_mb": self.settings.max_download_size_mb,
+                "search_provider": self.settings.search_provider,
+                "allowed_domains": list(self.settings.allowed_domains),
+                "api_key_enabled": bool(self._active_api_key()),
             },
             "saved_settings": saved_settings,
             "permission_options": PERMISSION_OPTIONS,
+            "jobs": self.db.list_jobs(20),
         }
 
     def apply_template(self, template_id: str, target_dir: str) -> dict[str, Any]:
@@ -451,6 +463,31 @@ class LocalAgent:
         indexed_sidecar = result.get("indexed_sidecar")
         if indexed_sidecar:
             self.rag.refresh()
+
+    def submit_job(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+        handlers = {
+            "build_project": lambda data: self.build_full_project(
+                description=data.get("description", ""),
+                target_dir=data.get("target_dir", "generated/project"),
+                project_name=data.get("project_name"),
+                allow_external=bool(data.get("allow_external")),
+            ),
+            "execute_project": lambda data: self.execute_project(
+                target_dir=data.get("target_dir", "generated/project"),
+                actions=data.get("actions", ["install", "run", "smoke"]),
+                allow_external=bool(data.get("allow_external")),
+            ),
+        }
+        if kind not in handlers:
+            raise ValueError("Unsupported job kind.")
+        job_id = self.jobs.submit(kind, payload, handlers[kind])
+        return {"job_id": job_id, "status": "queued"}
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        return self.db.get_job(job_id)
+
+    def _active_api_key(self) -> str:
+        return str(self.db.get_setting("api_key", self.settings.api_key) or "")
 
     @staticmethod
     def _prepare_run_steps(workflow_steps: list[dict[str, str]]) -> list[dict[str, Any]]:

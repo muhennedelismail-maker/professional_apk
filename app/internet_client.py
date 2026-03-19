@@ -27,10 +27,20 @@ class InternetClient:
     BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
     BLOCKED_EXTENSIONS = {".exe", ".dmg", ".pkg", ".app", ".sh", ".bat", ".command", ".msi", ".ps1"}
 
-    def __init__(self, downloads_dir: Path, max_download_size_mb: int = 10) -> None:
+    def __init__(
+        self,
+        downloads_dir: Path,
+        max_download_size_mb: int = 10,
+        search_provider: str = "duckduckgo",
+        search_base_url: str = "",
+        allowed_domains: tuple[str, ...] = (),
+    ) -> None:
         self.downloads_dir = downloads_dir.resolve()
         self.max_download_size_bytes = max_download_size_mb * 1024 * 1024
         self.user_agent = "ProfessionalAPKLocalAgent/1.0"
+        self.search_provider = search_provider
+        self.search_base_url = search_base_url.rstrip("/")
+        self.allowed_domains = tuple(domain.lower() for domain in allowed_domains)
 
     def fetch_url(self, url: str) -> dict[str, Any]:
         response = self._request(url)
@@ -72,12 +82,26 @@ class InternetClient:
 
     def search_web(self, query: str, limit: int = 5) -> dict[str, Any]:
         encoded = urllib.parse.quote_plus(query)
-        url = f"https://html.duckduckgo.com/html/?q={encoded}"
-        response = self._request(url)
-        text = response["body"].decode("utf-8", errors="ignore")
-        results = self._parse_search_results(text)[:limit]
+        if self.search_provider == "searxng" and self.search_base_url:
+            url = f"{self.search_base_url}/search?q={encoded}&format=json"
+            response = self._request(url)
+            parsed = json.loads(response["body"].decode("utf-8", errors="ignore"))
+            results = [
+                SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", ""),
+                    snippet=item.get("content", ""),
+                )
+                for item in parsed.get("results", [])[:limit]
+            ]
+        else:
+            url = f"https://html.duckduckgo.com/html/?q={encoded}"
+            response = self._request(url)
+            text = response["body"].decode("utf-8", errors="ignore")
+            results = self._parse_search_results(text)[:limit]
         return {
             "query": query,
+            "provider": self.search_provider,
             "results": [result.__dict__ for result in results],
         }
 
@@ -156,6 +180,8 @@ class InternetClient:
         host = (parsed.hostname or "").lower()
         if host in self.BLOCKED_HOSTS:
             raise InternetError("Access to localhost or loopback targets is blocked for internet tools.")
+        if self.allowed_domains and not any(host == domain or host.endswith("." + domain) for domain in self.allowed_domains):
+            raise InternetError("This domain is not allowed by the current domain allowlist.")
         try:
             ip = ipaddress.ip_address(host)
         except ValueError:

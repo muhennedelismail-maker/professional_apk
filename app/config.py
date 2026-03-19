@@ -24,6 +24,10 @@ class Settings:
     default_mode: str
     internet_enabled: bool
     max_download_size_mb: int
+    search_provider: str
+    search_base_url: str
+    allowed_domains: tuple[str, ...]
+    api_key: str
 
 
 def load_settings() -> Settings:
@@ -34,6 +38,8 @@ def load_settings() -> Settings:
     downloads_dir = workspace / "downloads"
     for path in (data_dir, uploads_dir, knowledge_dir, downloads_dir):
         path.mkdir(parents=True, exist_ok=True)
+    allowed_domains_raw = os.getenv("ALLOWED_DOMAINS", "")
+    allowed_domains = tuple(domain.strip().lower() for domain in allowed_domains_raw.split(",") if domain.strip())
 
     return Settings(
         workspace=workspace,
@@ -53,4 +59,8 @@ def load_settings() -> Settings:
         default_mode=os.getenv("DEFAULT_AGENT_MODE", "general"),
         internet_enabled=os.getenv("INTERNET_ENABLED", "true").lower() == "true",
         max_download_size_mb=int(os.getenv("MAX_DOWNLOAD_SIZE_MB", "10")),
+        search_provider=os.getenv("SEARCH_PROVIDER", "duckduckgo"),
+        search_base_url=os.getenv("SEARCH_BASE_URL", ""),
+        allowed_domains=allowed_domains,
+        api_key=os.getenv("AGENT_API_KEY", ""),
     )
