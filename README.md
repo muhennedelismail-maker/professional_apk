@@ -1,5 +1,7 @@
 # Local Ollama Agent
 
+![Dashboard Preview](docs/assets/dashboard-shot.svg)
+
 وكيل محلي مبني فوق `Ollama` مع:
 
 - Router بين نموذج الكود والرؤية
@@ -93,6 +95,37 @@ knowledge/
 - `project_spec.json`
 - `NEXT_STEPS.md`
 - أوامر `install / run / test`
+
+## Landing Page
+
+يوجد Landing بسيطة داخل:
+
+```text
+docs/index.html
+```
+
+وتعرض لمحة بصرية عن:
+- الواجهة
+- بناء المشاريع
+- تتبع الـ workflows
+
+## Screenshots
+
+### Builder
+
+![Builder Screenshot](docs/assets/builder-shot.svg)
+
+### Workflow Tracking
+
+![Workflow Screenshot](docs/assets/workflow-shot.svg)
+
+## Release v1.0.0
+
+ملاحظات الإصدار موجودة في:
+
+```text
+RELEASE_NOTES_v1.0.0.md
+```
 
 ## Execute Project
 

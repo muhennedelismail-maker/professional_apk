@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Professional APK - Local Ollama Agent</title>
+    <style>
+      :root {
+        --bg: #f5efe5;
+        --panel: rgba(255, 250, 242, 0.86);
+        --ink: #1d1b17;
+        --muted: #675f53;
+        --line: rgba(92, 78, 59, 0.16);
+        --accent: #1f6d5c;
+        --accent-2: #bf5e31;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(191, 94, 49, 0.14), transparent 30%),
+          linear-gradient(180deg, #f7f2ea 0%, #efe7db 100%);
+      }
+      .shell {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 32px auto 60px;
+      }
+      .hero,
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 24px 60px rgba(52, 42, 28, 0.12);
+      }
+      .hero {
+        padding: 28px;
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 24px;
+        align-items: center;
+      }
+      .eyebrow {
+        color: var(--accent-2);
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 12px;
+        margin: 0 0 8px;
+      }
+      h1, h2, p { margin-top: 0; }
+      .sub {
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.6;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .button {
+        display: inline-block;
+        text-decoration: none;
+        padding: 12px 18px;
+        border-radius: 999px;
+        color: white;
+        background: linear-gradient(135deg, var(--accent), #17483e);
+      }
+      .button.secondary {
+        background: linear-gradient(135deg, var(--accent-2), #9f4f29);
+      }
+      .grid {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+      }
+      .panel {
+        padding: 20px;
+      }
+      .shots {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      img {
+        width: 100%;
+        border-radius: 22px;
+        border: 1px solid var(--line);
+        background: white;
+      }
+      ul {
+        padding-left: 18px;
+        color: var(--muted);
+      }
+      @media (max-width: 900px) {
+        .hero,
+        .grid,
+        .shots {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Release v1.0.0</p>
+          <h1>Professional APK Local Agent</h1>
+          <p class="sub">
+            A local, Arabic-friendly Ollama agent that can chat, scaffold projects,
+            execute build pipelines, and track workflow progress from one interface.
+          </p>
+          <div class="actions">
+            <a class="button" href="../README.md">Open README</a>
+            <a class="button secondary" href="../RELEASE_NOTES_v1.0.0.md">View Release Notes</a>
+          </div>
+        </div>
+        <img src="./assets/dashboard-shot.svg" alt="Dashboard screenshot">
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Local First</h2>
+          <ul>
+            <li>Runs against local Ollama models</li>
+            <li>Stores memory and workflow history in SQLite</li>
+            <li>Supports safe local tooling and template generation</li>
+          </ul>
+        </article>
+        <article class="panel">
+          <h2>Project Builder</h2>
+          <ul>
+            <li>Choose a target directory</li>
+            <li>Generate a full scaffold from a plain-language description</li>
+            <li>Create `project_spec.json` and `NEXT_STEPS.md` automatically</li>
+          </ul>
+        </article>
+        <article class="panel">
+          <h2>Execution Pipeline</h2>
+          <ul>
+            <li>Install, run, and smoke-test project flows</li>
+            <li>Record workflow runs and telemetry</li>
+            <li>Generate first-pass fix notes on failure</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="shots">
+        <article class="panel">
+          <h2>Builder Flow</h2>
+          <img src="./assets/builder-shot.svg" alt="Builder screenshot">
+        </article>
+        <article class="panel">
+          <h2>Workflow Tracking</h2>
+          <img src="./assets/workflow-shot.svg" alt="Workflow screenshot">
+        </article>
+      </section>
+    </main>
+  </body>
+  </html>
