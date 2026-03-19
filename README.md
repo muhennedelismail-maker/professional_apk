@@ -14,7 +14,7 @@
 - واجهة ويب محلية تدعم النصوص والصور
 - Telemetry بسيط لقياس التشغيل
 - Hybrid RAG: embeddings عند توفرها مع fallback معجمي
-- مستويات صلاحيات للأدوات: `none`, `read`, `write`
+- مستويات صلاحيات للأدوات: `auto`, `none`, `local-read`, `local-write`, `internet-read`, `internet-download`, `full`
 - قوالب مشاريع جاهزة يمكن إنشاؤها مباشرة داخل مساحة العمل
 - قائمة محادثات حديثة داخل الواجهة
 - حفظ إعدادات محلية من الواجهة
@@ -38,6 +38,37 @@ python3 run.py
 
 ```text
 http://127.0.0.1:8765
+```
+
+## تكامل M1 المحلي
+
+لـ `MacBook Pro M1/M2/M3/M4` أصبح المشروع مضبوطًا افتراضيًا ليعمل مع:
+
+- `Ollama Native` على:
+  - `http://127.0.0.1:11434`
+- `SearXNG` المحلي على:
+  - `http://127.0.0.1:8080`
+
+إذا كانت البيئة المحلية تعمل، فالمشروع سيستخدمها مباشرة بدون أي تعديل إضافي.
+
+أوامر سريعة:
+
+```bash
+make m1-stack-up
+make m1-stack-down
+```
+
+أو مباشرة:
+
+```bash
+zsh deploy/m1-open-webui/start-stack.sh
+zsh deploy/m1-open-webui/stop-stack.sh
+```
+
+ويوجد مثال متغيرات بيئة جاهز هنا:
+
+```text
+.env.m1-local.example
 ```
 
 ## المتطلبات
@@ -73,12 +104,17 @@ knowledge/
 ## الأمان
 
 - الأدوات المحلية والإنترنت تعمل حسب مستوى الصلاحية المختار:
+  - `auto`
   - `none`
   - `local-read`
   - `local-write`
   - `internet-read`
   - `internet-download`
   - `full`
+- الوضع الافتراضي هو `auto`:
+  - يسمح للوكيل تلقائياً بقراءة ملفات المشروع
+  - ويتيح البحث والجلب والتنزيل من الإنترنت
+  - ويمنع الكتابة المحلية حتى ترفع الصلاحية عمداً
 - أوامر shell محصورة في قائمة آمنة للقراءة فقط.
 - الوصول إلى الملفات محصور داخل مساحة العمل الحالية.
 - إذا كان نموذج embedding غير متوفر، يعود البحث تلقائياً إلى الفهرسة المعجمية.
@@ -96,24 +132,44 @@ downloads/
 - يمكن للوكيل استخدام أدوات:
   - `web_search`
   - `fetch_url`
+  - `web_fetch`
   - `fetch_json`
   - `download_file`
+- `web_search` يعمل الآن بتسلسل ذكي:
+  - `Ollama Web Search API` أولاً إذا كان `OLLAMA_API_KEY` مضبوطاً
+  - ثم `SearXNG` إذا كان `SEARCH_BASE_URL` موجوداً
+  - ثم fallback أخير إلى `DuckDuckGo HTML`
+- الوكيل يستخدم الآن `Ollama tool calling` الرسمي داخل `/api/chat`، مع fallback متوافق إلى البروتوكول النصي القديم فقط عند الحاجة.
+- كل نتيجة بحث أو جلب ويب تعود بصيغة منظمة تحتوي:
+  - `provider_used`
+  - `fallback_used`
+  - `citations`
+- وعند استخدام أدوات الويب داخل المحادثة يحاول الوكيل توليد `ملخص منظّم` عبر structured outputs فوق نفس النتائج.
 
 متغيرات البيئة ذات الصلة:
 
 ```bash
 INTERNET_ENABLED=true
 MAX_DOWNLOAD_SIZE_MB=10
-SEARCH_PROVIDER=duckduckgo
-SEARCH_BASE_URL=
+SEARCH_PROVIDER=auto
+SEARCH_BASE_URL=http://127.0.0.1:8080
+OLLAMA_API_KEY=
+OLLAMA_WEB_BASE_URL=https://ollama.com
 ALLOWED_DOMAINS=
 ```
 
-إذا أردت مزود بحث خارجي متوافق مثل `SearXNG`:
+إذا أردت تفعيل `SearXNG` كـ fallback أو كمزود مباشر:
 
 ```bash
 SEARCH_PROVIDER=searxng
-SEARCH_BASE_URL=https://your-searxng.example.com
+SEARCH_BASE_URL=http://127.0.0.1:8080
+```
+
+إذا أردت الاعتماد على بحث Ollama الرسمي أولاً:
+
+```bash
+SEARCH_PROVIDER=auto
+OLLAMA_API_KEY=sk-...
 ```
 
 ## Background Jobs

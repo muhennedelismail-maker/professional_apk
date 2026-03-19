@@ -26,6 +26,8 @@ class Settings:
     max_download_size_mb: int
     search_provider: str
     search_base_url: str
+    ollama_api_key: str
+    ollama_web_base_url: str
     allowed_domains: tuple[str, ...]
     api_key: str
 
@@ -59,8 +61,10 @@ def load_settings() -> Settings:
         default_mode=os.getenv("DEFAULT_AGENT_MODE", "general"),
         internet_enabled=os.getenv("INTERNET_ENABLED", "true").lower() == "true",
         max_download_size_mb=int(os.getenv("MAX_DOWNLOAD_SIZE_MB", "10")),
-        search_provider=os.getenv("SEARCH_PROVIDER", "duckduckgo"),
-        search_base_url=os.getenv("SEARCH_BASE_URL", ""),
+        search_provider=os.getenv("SEARCH_PROVIDER", "auto"),
+        search_base_url=os.getenv("SEARCH_BASE_URL", "http://127.0.0.1:8080"),
+        ollama_api_key=os.getenv("OLLAMA_API_KEY", ""),
+        ollama_web_base_url=os.getenv("OLLAMA_WEB_BASE_URL", "https://ollama.com"),
         allowed_domains=allowed_domains,
         api_key=os.getenv("AGENT_API_KEY", ""),
     )

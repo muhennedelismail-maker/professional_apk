@@ -17,8 +17,31 @@ class FakeOllama:
     def embed(self, model, text):
         return [0.0, 0.0, 0.0]
 
-    def chat(self, model, messages):
+    def chat(self, model, messages, format_schema=None, tools=None):
         return {"message": {"content": "رد اختباري"}}
+
+
+class FakeToolCallingOllama(FakeOllama):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def chat(self, model, messages, format_schema=None, tools=None):
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "read_file",
+                                "arguments": {"path": "note.txt"},
+                            }
+                        }
+                    ],
+                }
+            }
+        return {"message": {"content": "تمت قراءة الملف بنجاح"}}
 
 
 class AgentTests(unittest.TestCase):
@@ -45,8 +68,10 @@ class AgentTests(unittest.TestCase):
             default_mode="general",
             internet_enabled=True,
             max_download_size_mb=10,
-            search_provider="duckduckgo",
+            search_provider="auto",
             search_base_url="",
+            ollama_api_key="",
+            ollama_web_base_url="https://ollama.com",
             allowed_domains=(),
             api_key="",
         )
@@ -66,7 +91,7 @@ class AgentTests(unittest.TestCase):
         self.assertTrue(dashboard["templates"])
 
     def test_chat_creates_run(self) -> None:
-        result = self.agent.chat(None, "مرحبا", permission_level="none", mode="general")
+        result = self.agent.chat(None, "مرحبا", permission_level="auto", mode="general")
         self.assertIn("conversation_id", result)
         runs = self.db.list_task_runs()
         self.assertEqual(len(runs), 1)
@@ -88,3 +113,12 @@ class AgentTests(unittest.TestCase):
         )
         result = self.agent.execute_project(target_dir="generated/demo-run", actions=["run"])
         self.assertIn(result["status"], {"completed", "failed"})
+
+    def test_chat_supports_official_tool_calls(self) -> None:
+        (self.workspace / "note.txt").write_text("hello tools", encoding="utf-8")
+        self.agent.ollama = FakeToolCallingOllama()
+        self.agent.rag.ollama = self.agent.ollama
+        result = self.agent.chat(None, "اقرأ الملف", permission_level="local-read", mode="general")
+        self.assertIn("تمت قراءة الملف", result["answer"])
+        tool_cards = [card for card in result["cards"] if card["type"] == "tool"]
+        self.assertTrue(tool_cards)

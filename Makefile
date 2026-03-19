@@ -1,4 +1,4 @@
-.PHONY: run test docker-up docker-down
+.PHONY: run test docker-up docker-down m1-stack-up m1-stack-down
 
 run:
 	python3 run.py
@@ -11,3 +11,9 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+m1-stack-up:
+	zsh deploy/m1-open-webui/start-stack.sh
+
+m1-stack-down:
+	zsh deploy/m1-open-webui/stop-stack.sh

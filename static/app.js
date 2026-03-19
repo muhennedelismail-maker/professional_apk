@@ -56,6 +56,8 @@ function addMessage(role, text, cards = []) {
 
 async function refreshDashboard() {
   const data = await fetchJson("/api/dashboard");
+  const modeSelect = document.querySelector("#modeSelect");
+  const permissionSelect = document.querySelector("#permissionSelect");
   const dash = document.querySelector("#dashboard");
   const runsPanel = document.querySelector("#runsPanel");
   const conversationsPanel = document.querySelector("#conversationsPanel");
@@ -86,7 +88,7 @@ async function refreshDashboard() {
   dash.appendChild(models);
 
   const internet = el("div", "metric");
-  internet.innerHTML = `<strong>الإنترنت</strong><div class="muted">enabled: ${data.settings.internet_enabled}<br>downloads: ${data.settings.downloads_dir}<br>max: ${data.settings.max_download_size_mb} MB<br>provider: ${data.settings.search_provider}</div>`;
+  internet.innerHTML = `<strong>الإنترنت</strong><div class="muted">enabled: ${data.settings.internet_enabled}<br>downloads: ${data.settings.downloads_dir}<br>max: ${data.settings.max_download_size_mb} MB<br>provider: ${data.settings.search_provider}<br>ollama web: ${data.settings.ollama_web_search_enabled}<br>ollama api: ${data.settings.ollama_web_base_url}</div>`;
   dash.appendChild(internet);
 
   data.documents.slice(0, 8).forEach((doc) => {
@@ -159,7 +161,11 @@ async function refreshDashboard() {
   });
 
   const settingsBox = el("div", "settings-box");
-  settingsBox.innerHTML = `<div class="muted">default mode: ${data.saved_settings.default_mode || data.settings.default_mode}</div><div class="muted">permission: ${data.saved_settings.permission_level || 'none'}</div><div class="muted">internet enabled: ${String(data.settings.internet_enabled)}</div><div class="muted">api key enabled: ${String(data.settings.api_key_enabled)}</div>`;
+  const savedMode = data.saved_settings.default_mode || data.settings.default_mode;
+  const savedPermission = data.saved_settings.permission_level || "auto";
+  modeSelect.value = savedMode;
+  permissionSelect.value = savedPermission;
+  settingsBox.innerHTML = `<div class="muted">default mode: ${savedMode}</div><div class="muted">permission: ${savedPermission}</div><div class="muted">internet enabled: ${String(data.settings.internet_enabled)}</div><div class="muted">api key enabled: ${String(data.settings.api_key_enabled)}</div>`;
   const apiKeyInput = document.createElement("input");
   apiKeyInput.className = "project-input";
   apiKeyInput.placeholder = "API Key (optional)";
@@ -269,7 +275,7 @@ document.querySelector("#reindexBtn").addEventListener("click", async () => {
 });
 
 window.addEventListener("load", async () => {
-  addMessage("assistant", "الوكيل جاهز. يمكنك سؤاله بالعربية، رفع صورة، أو تفعيل الأدوات المحلية عند الحاجة.");
+  addMessage("assistant", "الوكيل جاهز. الأدوات الآمنة والويب يعملان تلقائياً في الوضع الافتراضي، ويمكنك رفع الصلاحية للكتابة إذا احتجت ذلك.");
   try {
     await fetchJson("/api/health");
     refreshDashboard();

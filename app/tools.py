@@ -16,6 +16,152 @@ class ToolError(RuntimeError):
 
 class SafeTools:
     SAFE_COMMANDS = {"pwd", "ls", "cat", "head", "tail", "find", "rg", "sed", "wc"}
+    TOOL_SCHEMAS = [
+        {
+            "type": "function",
+            "function": {
+                "name": "shell",
+                "description": "Run a safe read-only shell command inside the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a UTF-8 text file inside the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Create or overwrite a UTF-8 text file inside the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "patch_file",
+                "description": "Replace the first occurrence of text inside a workspace file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "find": {"type": "string"},
+                        "replace": {"type": "string"},
+                    },
+                    "required": ["path", "find", "replace"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_workspace",
+                "description": "Search for a keyword in workspace files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_files",
+                "description": "List files or folders inside the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the public web and return ranked results with citations.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "fetch_url",
+                "description": "Fetch and extract readable text from a web page.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "web_fetch",
+                "description": "Fetch a web page with the same behavior as fetch_url.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "fetch_json",
+                "description": "Fetch a JSON URL and return parsed JSON.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "download_file",
+                "description": "Download a remote file into the downloads folder.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "filename": {"type": "string"},
+                    },
+                    "required": ["url"],
+                },
+            },
+        },
+    ]
 
     def __init__(
         self,
@@ -35,13 +181,13 @@ class SafeTools:
         normalized = self._normalize_permission(permission_level)
         if normalized == "none":
             raise ToolError("Tool execution is disabled.")
-        if tool_name in {"read_file", "search_workspace", "list_files", "shell"} and normalized not in {"local-read", "local-write", "full"}:
+        if tool_name in {"read_file", "search_workspace", "list_files", "shell"} and not self._allows_local_read(normalized):
             raise ToolError("This tool requires local read permission.")
-        if tool_name in {"write_file", "patch_file"} and normalized not in {"local-write", "full"}:
+        if tool_name in {"write_file", "patch_file"} and not self._allows_local_write(normalized):
             raise ToolError("This tool requires write permission.")
-        if tool_name in {"web_search", "fetch_url", "fetch_json"} and normalized not in {"internet-read", "internet-download", "full"}:
+        if tool_name in {"web_search", "fetch_url", "web_fetch", "fetch_json"} and not self._allows_internet_read(normalized):
             raise ToolError("This tool requires internet read permission.")
-        if tool_name == "download_file" and normalized not in {"internet-download", "full"}:
+        if tool_name == "download_file" and not self._allows_internet_download(normalized):
             raise ToolError("This tool requires internet download permission.")
         if tool_name == "shell":
             return self.shell(str(args.get("command", "")))
@@ -62,6 +208,8 @@ class SafeTools:
         if tool_name == "web_search":
             return self.web_search(str(args.get("query", "")), int(args.get("limit", 5)))
         if tool_name == "fetch_url":
+            return self.fetch_url(str(args.get("url", "")))
+        if tool_name == "web_fetch":
             return self.fetch_url(str(args.get("url", "")))
         if tool_name == "fetch_json":
             return self.fetch_json(str(args.get("url", "")))
@@ -163,7 +311,15 @@ class SafeTools:
             result = self.internet_client.search_web(query, limit=limit) if self.internet_client else {}
         except InternetError as exc:
             raise ToolError(str(exc)) from exc
-        self._record_telemetry("internet_search", result)
+        self._record_telemetry(
+            "internet_search",
+            {
+                "query": query,
+                "provider_used": result.get("provider_used"),
+                "fallback_used": result.get("fallback_used"),
+                "count": len(result.get("results", [])),
+            },
+        )
         return result
 
     def fetch_url(self, url: str) -> dict[str, Any]:
@@ -172,7 +328,16 @@ class SafeTools:
             result = self.internet_client.fetch_url(url) if self.internet_client else {}
         except InternetError as exc:
             raise ToolError(str(exc)) from exc
-        self._record_telemetry("internet_fetch_url", {"url": url, "status": result.get("status"), "content_type": result.get("content_type")})
+        self._record_telemetry(
+            "internet_fetch_url",
+            {
+                "url": url,
+                "status": result.get("status"),
+                "content_type": result.get("content_type"),
+                "provider_used": result.get("provider_used"),
+                "fallback_used": result.get("fallback_used"),
+            },
+        )
         return result
 
     def fetch_json(self, url: str) -> dict[str, Any]:
@@ -216,6 +381,26 @@ class SafeTools:
             "write": "local-write",
         }
         return mapping.get(permission_level, permission_level)
+
+    @staticmethod
+    def _allows_local_read(permission_level: str) -> bool:
+        return permission_level in {"auto", "local-read", "local-write", "full"}
+
+    @staticmethod
+    def _allows_local_write(permission_level: str) -> bool:
+        return permission_level in {"local-write", "full"}
+
+    @staticmethod
+    def _allows_internet_read(permission_level: str) -> bool:
+        return permission_level in {"auto", "internet-read", "internet-download", "full"}
+
+    @staticmethod
+    def _allows_internet_download(permission_level: str) -> bool:
+        return permission_level in {"auto", "internet-download", "full"}
+
+    @classmethod
+    def tool_schemas(cls) -> list[dict[str, Any]]:
+        return cls.TOOL_SCHEMAS
 
 
 def format_tool_result(result: dict[str, Any]) -> str:

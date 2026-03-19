@@ -56,7 +56,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 conversation_id=payload.get("conversation_id"),
                 user_text=payload.get("message", ""),
                 image_paths=image_paths,
-                permission_level=str(payload.get("permission_level", "none")),
+                permission_level=str(payload.get("permission_level", "auto")),
                 mode=payload.get("mode"),
             )
             self._json(HTTPStatus.OK, response)

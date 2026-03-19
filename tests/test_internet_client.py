@@ -1,11 +1,12 @@
 import io
 import json
 import tempfile
+import urllib.error
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.internet_client import InternetClient
+from app.internet_client import InternetClient, InternetError
 
 
 class _FakeResponse:
@@ -57,10 +58,67 @@ class InternetClientTests(unittest.TestCase):
         self.assertTrue(Path(result["path"]).exists())
         self.assertTrue(Path(result["indexed_sidecar"]).exists())
 
+    @patch("urllib.request.urlopen")
+    def test_search_web_falls_back_from_ollama_to_searxng(self, mock_urlopen) -> None:
+        client = InternetClient(
+            self.downloads,
+            max_download_size_mb=1,
+            search_provider="auto",
+            search_base_url="https://search.example.com",
+            ollama_api_key="sk-test",
+            allowed_domains=("example.com",),
+        )
+
+        def fake_urlopen(request, timeout=20):
+            url = request.full_url
+            if url == "https://ollama.com/api/web_search":
+                raise urllib.error.URLError("down")
+            if url.startswith("https://search.example.com/search?"):
+                body = json.dumps(
+                    {"results": [{"title": "Example", "url": "https://example.com/page", "content": "Snippet"}]}
+                ).encode()
+                return _FakeResponse(body, content_type="application/json")
+            raise AssertionError(url)
+
+        mock_urlopen.side_effect = fake_urlopen
+        result = client.search_web("hello", limit=3)
+        self.assertEqual(result["provider_used"], "searxng")
+        self.assertTrue(result["fallback_used"])
+        self.assertEqual(result["citations"][0]["url"], "https://example.com/page")
+
+    @patch("urllib.request.urlopen")
+    def test_fetch_url_uses_ollama_web_fetch_when_available(self, mock_urlopen) -> None:
+        client = InternetClient(
+            self.downloads,
+            max_download_size_mb=1,
+            search_provider="auto",
+            ollama_api_key="sk-test",
+            allowed_domains=("example.com",),
+        )
+
+        def fake_urlopen(request, timeout=20):
+            url = request.full_url
+            if url == "https://ollama.com/api/web_fetch":
+                body = json.dumps(
+                    {
+                        "title": "Fetched title",
+                        "content": "Full fetched content",
+                        "links": ["https://example.com/a", "https://example.com/b"],
+                    }
+                ).encode()
+                return _FakeResponse(body, content_type="application/json")
+            raise AssertionError(url)
+
+        mock_urlopen.side_effect = fake_urlopen
+        result = client.fetch_url("https://example.com/article")
+        self.assertEqual(result["provider_used"], "ollama")
+        self.assertEqual(result["title"], "Fetched title")
+        self.assertEqual(result["links"][0], "https://example.com/a")
+
     def test_block_localhost_targets(self) -> None:
-        with self.assertRaises(Exception):
+        with self.assertRaises(InternetError):
             self.client.fetch_url("http://127.0.0.1/private")
 
     def test_block_non_allowlisted_domain(self) -> None:
-        with self.assertRaises(Exception):
+        with self.assertRaises(InternetError):
             self.client.fetch_url("https://not-allowed.test/page")

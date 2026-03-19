@@ -42,11 +42,20 @@ class OllamaClient:
     def tags(self) -> dict[str, Any]:
         return self._get("/api/tags")
 
-    def chat(self, model: str, messages: list[dict[str, Any]], options: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._post(
-            "/api/chat",
-            {"model": model, "messages": messages, "stream": False, "options": options or {}},
-        )
+    def chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        options: dict[str, Any] | None = None,
+        format_schema: dict[str, Any] | str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False, "options": options or {}}
+        if format_schema is not None:
+            payload["format"] = format_schema
+        if tools:
+            payload["tools"] = tools
+        return self._post("/api/chat", payload)
 
     def embed(self, model: str, text: str) -> list[float]:
         response = self._post("/api/embed", {"model": model, "input": text})

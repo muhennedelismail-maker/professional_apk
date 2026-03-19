@@ -32,6 +32,7 @@ AGENT_MODES = {
     "manager": "Project manager mode. Prefer milestones, priorities, risks, and execution sequencing.",
 }
 PERMISSION_OPTIONS = [
+    "auto",
     "none",
     "local-read",
     "local-write",
@@ -39,6 +40,15 @@ PERMISSION_OPTIONS = [
     "internet-download",
     "full",
 ]
+WEB_RESEARCH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "key_points": {"type": "array", "items": {"type": "string"}},
+        "source_urls": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["summary", "key_points", "source_urls"],
+}
 
 
 class LocalAgent:
@@ -51,6 +61,8 @@ class LocalAgent:
             max_download_size_mb=settings.max_download_size_mb,
             search_provider=settings.search_provider,
             search_base_url=settings.search_base_url,
+            ollama_api_key=settings.ollama_api_key,
+            ollama_web_base_url=settings.ollama_web_base_url,
             allowed_domains=settings.allowed_domains,
         )
         self.jobs = JobQueue(db)
@@ -138,41 +150,57 @@ class LocalAgent:
         answer = ""
         tool_events: list[dict[str, Any]] = []
         generated_artifacts: list[str] = []
+        citation_items: list[dict[str, Any]] = []
         try:
             for _ in range(self.settings.max_tool_steps):
-                reply = self.ollama.chat(model=route.model, messages=messages)
+                reply = self.ollama.chat(model=route.model, messages=messages, tools=self.tools.tool_schemas())
                 message = reply.get("message", {})
                 answer = message.get("content", "")
-                tool_call = self._parse_tool_call(answer)
-                if not tool_call:
+                tool_calls = self._extract_tool_calls(message, answer)
+                if not tool_calls:
                     break
                 if permission_level == "none":
                     answer = (
                         "الوكيل طلب استخدام أداة محلية، لكن وضع الأمان الحالي يمنع التنفيذ التلقائي. "
-                        "ارفع مستوى الصلاحية إلى read أو write ثم أعد الإرسال إذا أردت المتابعة."
+                        "ارفع مستوى الصلاحية إلى auto أو local-read أو local-write أو internet-read أو full ثم أعد الإرسال إذا أردت المتابعة."
                     )
                     cards.append({"type": "warning", "title": "مطلوب تأكيد", "content": answer})
                     break
-                try:
-                    result = self.tools.run(tool_call["tool"], tool_call.get("args", {}), permission_level=permission_level)
-                    tool_events.append({"tool": tool_call["tool"], "result": result})
-                    artifact_path = result.get("path")
-                    if artifact_path:
-                        generated_artifacts.append(str(artifact_path))
-                    messages.append({"role": "assistant", "content": answer})
-                    messages.append({"role": "tool", "content": format_tool_result(result)})
-                    cards.append(
-                        {
-                            "type": "tool",
-                            "title": f"Tool: {tool_call['tool']}",
-                            "content": format_tool_result(result),
-                        }
-                    )
-                except ToolError as exc:
-                    tool_error = {"error": str(exc), "tool": tool_call["tool"]}
-                    tool_events.append(tool_error)
-                    messages.append({"role": "assistant", "content": answer})
-                    messages.append({"role": "tool", "content": format_tool_result(tool_error)})
+                messages.append({"role": "assistant", "content": answer, "tool_calls": tool_calls})
+                for tool_call in tool_calls:
+                    tool_name = tool_call["tool"]
+                    tool_args = tool_call.get("args", {})
+                    try:
+                        result = self.tools.run(tool_name, tool_args, permission_level=permission_level)
+                        tool_events.append({"tool": tool_name, "result": result})
+                        citation_items.extend(result.get("citations", []))
+                        artifact_path = result.get("path")
+                        if artifact_path:
+                            generated_artifacts.append(str(artifact_path))
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_name": tool_name,
+                                "content": format_tool_result(result),
+                            }
+                        )
+                        cards.append(
+                            {
+                                "type": "tool",
+                                "title": f"Tool: {tool_name}",
+                                "content": format_tool_result(result),
+                            }
+                        )
+                    except ToolError as exc:
+                        tool_error = {"error": str(exc), "tool": tool_name}
+                        tool_events.append(tool_error)
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_name": tool_name,
+                                "content": format_tool_result(tool_error),
+                            }
+                        )
             else:
                 answer = "توقفت سلسلة الأدوات بعد بلوغ الحد الأقصى للخطوات."
         except OllamaError as exc:
@@ -182,6 +210,7 @@ class LocalAgent:
             )
 
         latency_ms = int((time.time() - start) * 1000)
+        structured_web_summary = self._build_structured_web_summary(route.model, user_text, tool_events, citation_items)
         final_run_steps = self._finalize_run_steps(run_steps, generated_artifacts)
         self.db.upsert_task_run(
             run_id=run_id,
@@ -239,6 +268,27 @@ class LocalAgent:
                 ],
             }
         )
+        if citation_items:
+            deduped: list[str] = []
+            for item in citation_items:
+                url = str(item.get("url", "") or "")
+                title = str(item.get("title", "") or url)
+                provider = str(item.get("provider", "") or "direct")
+                if not url:
+                    continue
+                line = f"{title} [{provider}] - {url}"
+                if line not in deduped:
+                    deduped.append(line)
+            if deduped:
+                cards.append({"type": "sources", "title": "مصادر الويب", "items": deduped[:10]})
+        if structured_web_summary:
+            cards.append(
+                {
+                    "type": "summary",
+                    "title": "ملخص منظّم",
+                    "items": [structured_web_summary["summary"], *structured_web_summary["key_points"]],
+                }
+            )
         if generated_artifacts:
             cards.append({"type": "artifacts", "title": "الملفات الناتجة", "items": generated_artifacts})
         return {"conversation_id": conversation_id, "answer": answer, "cards": cards}
@@ -263,6 +313,8 @@ class LocalAgent:
                 "downloads_dir": str(self.settings.downloads_dir),
                 "max_download_size_mb": self.settings.max_download_size_mb,
                 "search_provider": self.settings.search_provider,
+                "ollama_web_search_enabled": bool(self.settings.ollama_api_key),
+                "ollama_web_base_url": self.settings.ollama_web_base_url,
                 "allowed_domains": list(self.settings.allowed_domains),
                 "api_key_enabled": bool(self._active_api_key()),
             },
@@ -489,6 +541,72 @@ class LocalAgent:
     def _active_api_key(self) -> str:
         return str(self.db.get_setting("api_key", self.settings.api_key) or "")
 
+    def _build_structured_web_summary(
+        self,
+        model: str,
+        user_text: str,
+        tool_events: list[dict[str, Any]],
+        citation_items: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        if not citation_items:
+            return None
+        context_blocks = []
+        for item in tool_events:
+            result = item.get("result") or {}
+            if not isinstance(result, dict):
+                continue
+            if result.get("results"):
+                for entry in result["results"][:3]:
+                    context_blocks.append(
+                        {
+                            "title": entry.get("title", ""),
+                            "url": entry.get("url", ""),
+                            "snippet": entry.get("snippet", ""),
+                        }
+                    )
+            elif result.get("text"):
+                context_blocks.append(
+                    {
+                        "title": result.get("title", result.get("url", "")),
+                        "url": result.get("url", ""),
+                        "snippet": result.get("text", "")[:1200],
+                    }
+                )
+        if not context_blocks:
+            return None
+        prompt = (
+            "حلل نتائج الويب التالية وارجع JSON فقط يطابق الـ schema. "
+            "اكتب summary قصير بالعربية، و3 key_points كحد أقصى، وضع فقط الروابط الموجودة فعلاً داخل source_urls."
+        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "query": user_text,
+                        "sources": context_blocks[:4],
+                        "citations": citation_items[:6],
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        try:
+            response = self.ollama.chat(model=model, messages=messages, format_schema=WEB_RESEARCH_SCHEMA)
+            content = response.get("message", {}).get("content", "")
+            if not content:
+                return None
+            parsed = json.loads(content)
+            summary = str(parsed.get("summary", "") or "").strip()
+            key_points = [str(point).strip() for point in parsed.get("key_points", []) if str(point).strip()][:3]
+            source_urls = [str(url).strip() for url in parsed.get("source_urls", []) if str(url).strip()][:6]
+            if not summary:
+                return None
+            return {"summary": summary, "key_points": key_points, "source_urls": source_urls}
+        except (OllamaError, json.JSONDecodeError, TypeError, ValueError):
+            return None
+
     @staticmethod
     def _prepare_run_steps(workflow_steps: list[dict[str, str]]) -> list[dict[str, Any]]:
         prepared = []
@@ -530,6 +648,26 @@ class LocalAgent:
             return json.loads(match.group(1))
         except json.JSONDecodeError:
             return None
+
+    @classmethod
+    def _extract_tool_calls(cls, message: dict[str, Any], answer: str) -> list[dict[str, Any]]:
+        raw_tool_calls = message.get("tool_calls") or []
+        normalized: list[dict[str, Any]] = []
+        for item in raw_tool_calls:
+            function = item.get("function", {}) if isinstance(item, dict) else {}
+            name = str(function.get("name", "") or item.get("name", "") or "")
+            arguments = function.get("arguments", {}) if isinstance(function, dict) else {}
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+            if name:
+                normalized.append({"tool": name, "args": arguments if isinstance(arguments, dict) else {}})
+        if normalized:
+            return normalized
+        legacy = cls._parse_tool_call(answer)
+        return [legacy] if legacy else []
 
     @staticmethod
     def _history_to_chat(history: list[dict[str, Any]]) -> list[dict[str, Any]]:

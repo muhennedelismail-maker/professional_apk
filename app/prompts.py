@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-TOOL_PROTOCOL = """If you need a tool, respond with only:
-<tool_call>{"tool":"tool_name","args":{...}}</tool_call>
+TOOL_PROTOCOL = """You may use the provided tool calling interface when a tool is needed.
 
 Available tools:
 - shell: run a safe read-only shell command
@@ -12,8 +11,17 @@ Available tools:
 - list_files: list project files inside the workspace
 - web_search: search the public web
 - fetch_url: fetch and extract text from a web page
+- web_fetch: fetch and extract text from a web page with the same behavior as fetch_url
 - fetch_json: fetch a JSON URL
 - download_file: download a web file into the downloads folder
+
+When internet tools are used:
+- Prefer citing the source URLs at the end of the answer.
+- If the tool result includes citations, rely on them instead of inventing references.
+
+Compatibility fallback:
+- If native tool calling is unavailable, you may respond with only:
+  <tool_call>{"tool":"tool_name","args":{...}}</tool_call>
 
 When you have enough information, answer normally in Arabic unless the user asks otherwise.
 """
