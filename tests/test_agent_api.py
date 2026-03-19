@@ -62,3 +62,21 @@ class AgentTests(unittest.TestCase):
         self.assertIn("conversation_id", result)
         runs = self.db.list_task_runs()
         self.assertEqual(len(runs), 1)
+
+    def test_build_full_project_creates_manifest(self) -> None:
+        result = self.agent.build_full_project(
+            description="Build a FastAPI health check service",
+            target_dir="generated/demo-api",
+            project_name="demo-api",
+        )
+        self.assertEqual(result["stack"], "fastapi")
+        self.assertTrue((self.workspace / "generated/demo-api/project_spec.json").exists())
+
+    def test_execute_project_pipeline(self) -> None:
+        self.agent.build_full_project(
+            description="Build a Python service",
+            target_dir="generated/demo-run",
+            project_name="demo-run",
+        )
+        result = self.agent.execute_project(target_dir="generated/demo-run", actions=["run"])
+        self.assertIn(result["status"], {"completed", "failed"})

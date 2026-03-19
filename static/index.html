@@ -49,6 +49,19 @@
         </aside>
 
         <section class="panel chat-panel">
+          <section class="builder-panel">
+            <h2>Build Full Project</h2>
+            <input id="projectNameInput" class="project-input" placeholder="اسم المشروع الاختياري">
+            <input id="targetDirInput" class="project-input" placeholder="مجلد الهدف مثل generated/my-app أو /مسار/كامل">
+            <label class="checkbox">
+              <input type="checkbox" id="allowExternalToggle">
+              السماح بمجلد خارج مساحة العمل
+            </label>
+            <div class="builder-actions">
+              <button id="buildProjectBtn" type="button">ابن المشروع كاملاً</button>
+              <button id="executeProjectBtn" type="button">ثبّت وشغّل واختبر</button>
+            </div>
+          </section>
           <div id="messages" class="messages"></div>
           <form id="chatForm" class="composer">
             <textarea id="messageInput" placeholder="اكتب طلبك هنا..."></textarea>

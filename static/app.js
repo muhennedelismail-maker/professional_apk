@@ -252,3 +252,54 @@ window.addEventListener("load", async () => {
     addMessage("assistant", "تعذر الوصول إلى Ollama محلياً. شغّل التطبيق ثم أعد المحاولة.");
   }
 });
+
+document.querySelector("#buildProjectBtn").addEventListener("click", async () => {
+  const description = document.querySelector("#messageInput").value.trim();
+  const projectName = document.querySelector("#projectNameInput").value.trim();
+  const targetDir = document.querySelector("#targetDirInput").value.trim() || `generated/${projectName || "new-project"}`;
+  const allowExternal = document.querySelector("#allowExternalToggle").checked;
+  if (!description) {
+    addMessage("assistant", "اكتب وصف المشروع أولاً في صندوق الرسالة ثم اضغط بناء المشروع.");
+    return;
+  }
+  addMessage("user", `Build full project: ${description}`);
+  try {
+    const result = await fetchJson("/api/projects/build", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        description,
+        project_name: projectName,
+        target_dir: targetDir,
+        allow_external: allowExternal,
+      }),
+    });
+    conversationId = result.conversation_id;
+    addMessage("assistant", `تم إنشاء المشروع ${result.project_name} داخل ${result.target_dir}`, result.cards || []);
+    refreshDashboard();
+  } catch (error) {
+    addMessage("assistant", `تعذر بناء المشروع: ${error.message}`);
+  }
+});
+
+document.querySelector("#executeProjectBtn").addEventListener("click", async () => {
+  const targetDir = document.querySelector("#targetDirInput").value.trim() || "generated/new-project";
+  const allowExternal = document.querySelector("#allowExternalToggle").checked;
+  addMessage("user", `Execute project pipeline: ${targetDir}`);
+  try {
+    const result = await fetchJson("/api/projects/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_dir: targetDir,
+        allow_external: allowExternal,
+        actions: ["install", "run", "smoke"],
+      }),
+    });
+    conversationId = result.conversation_id;
+    addMessage("assistant", `نتيجة التنفيذ: ${result.status}`, result.cards || []);
+    refreshDashboard();
+  } catch (error) {
+    addMessage("assistant", `تعذر تنفيذ المشروع: ${error.message}`);
+  }
+});

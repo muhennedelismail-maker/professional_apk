@@ -56,6 +56,23 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             self._json(HTTPStatus.OK, response)
             return
+        if parsed.path == "/api/projects/build":
+            response = AGENT.build_full_project(
+                description=payload.get("description", ""),
+                target_dir=payload.get("target_dir", "generated/project"),
+                project_name=payload.get("project_name"),
+                allow_external=bool(payload.get("allow_external")),
+            )
+            self._json(HTTPStatus.OK, response)
+            return
+        if parsed.path == "/api/projects/execute":
+            response = AGENT.execute_project(
+                target_dir=payload.get("target_dir", "generated/project"),
+                actions=payload.get("actions", ["install", "run", "smoke"]),
+                allow_external=bool(payload.get("allow_external")),
+            )
+            self._json(HTTPStatus.OK, response)
+            return
         if parsed.path == "/api/conversations/export":
             response = AGENT.export_conversation(payload.get("conversation_id", ""))
             self._json(HTTPStatus.OK, response)

@@ -155,6 +155,29 @@ h1, h2 {
   padding-top: 16px;
 }
 
+.builder-panel {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.builder-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.project-input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.84);
+  font: inherit;
+}
+
 textarea {
   width: 100%;
   min-height: 120px;

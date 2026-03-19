@@ -13,6 +13,8 @@ from .db import Database
 from .memory import MemoryStore
 from .ollama_client import OllamaClient, OllamaError
 from .planner import TaskPlanner
+from .project_builder import ProjectBuilder
+from .project_executor import ProjectExecutor
 from .prompts import system_prompt
 from .rag import RagIndex
 from .router import ModelRouter
@@ -39,6 +41,8 @@ class LocalAgent:
         self.rag = RagIndex(db, settings.knowledge_dir, settings.workspace, self.ollama, settings.embedding_model)
         self.tools = SafeTools(settings.workspace)
         self.templates = TemplateManager(settings.workspace)
+        self.project_builder = ProjectBuilder(settings.workspace)
+        self.project_executor = ProjectExecutor(settings.workspace)
         self.planner = TaskPlanner()
 
     def ensure_ready(self) -> dict[str, Any]:
@@ -232,6 +236,156 @@ class LocalAgent:
         written = self.templates.apply(template_id, target_dir)
         self.db.add_telemetry("template_apply", {"template_id": template_id, "target_dir": target_dir, "written": written})
         return {"template_id": template_id, "target_dir": target_dir, "written": written}
+
+    def build_full_project(
+        self,
+        description: str,
+        target_dir: str,
+        project_name: str | None = None,
+        allow_external: bool = False,
+    ) -> dict[str, Any]:
+        conversation_id = str(uuid.uuid4())
+        self.db.ensure_conversation(conversation_id, project_name or description[:60] or "Build full project")
+        run_id = str(uuid.uuid4())
+        steps = [
+            {"title": "تحليل الوصف", "details": "تحويل الوصف إلى نوع مشروع مناسب.", "status": "completed"},
+            {"title": "اختيار القالب", "details": "تحديد أفضل scaffold أولي.", "status": "completed"},
+            {"title": "إنشاء الملفات", "details": "كتابة ملفات المشروع والـ manifest.", "status": "completed"},
+            {"title": "إعداد أوامر التشغيل", "details": "إخراج أوامر التثبيت والتشغيل والاختبار.", "status": "completed"},
+        ]
+        self.db.upsert_task_run(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            mode="builder",
+            title=project_name or description[:80] or "Build full project",
+            status="running",
+            progress=0.2,
+            summary="جارٍ بناء المشروع الكامل.",
+        )
+        self.db.replace_task_steps(run_id, steps)
+        result = self.project_builder.build(
+            description=description,
+            target_dir=target_dir,
+            project_name=project_name,
+            allow_external=allow_external,
+        )
+        self.db.upsert_task_run(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            mode="builder",
+            title=project_name or description[:80] or "Build full project",
+            status="completed",
+            progress=1.0,
+            summary=f"تم إنشاء مشروع {result['project_name']} داخل {result['target_dir']}.",
+        )
+        self.db.replace_task_steps(run_id, steps)
+        self.db.add_telemetry(
+            "project_build",
+            {
+                "run_id": run_id,
+                "conversation_id": conversation_id,
+                "target_dir": result["target_dir"],
+                "stack": result["stack"],
+                "template_id": result["template_id"],
+            },
+        )
+        cards = [
+            {"type": "workflow", "title": "مراحل البناء", "items": [step["title"] for step in steps]},
+            {"type": "artifacts", "title": "الملفات الناتجة", "items": result["written"]},
+            {
+                "type": "commands",
+                "title": "أوامر المشروع",
+                "items": (
+                    [f"install: {cmd}" for cmd in result["manifest"]["install_commands"]]
+                    + [f"run: {cmd}" for cmd in result["manifest"]["run_commands"]]
+                    + [f"test: {cmd}" for cmd in result["manifest"]["test_commands"]]
+                ),
+            },
+        ]
+        return {
+            "run_id": run_id,
+            "conversation_id": conversation_id,
+            "project_name": result["project_name"],
+            "target_dir": result["target_dir"],
+            "stack": result["stack"],
+            "manifest": result["manifest"],
+            "cards": cards,
+        }
+
+    def execute_project(
+        self,
+        target_dir: str,
+        actions: list[str],
+        allow_external: bool = False,
+    ) -> dict[str, Any]:
+        conversation_id = str(uuid.uuid4())
+        run_id = str(uuid.uuid4())
+        title = f"Execute project: {target_dir}"
+        step_titles = {
+            "install": "تثبيت الاعتماديات",
+            "run": "تشغيل المشروع",
+            "test": "اختبار المشروع",
+            "smoke": "Smoke test",
+        }
+        steps = [
+            {"title": step_titles.get(action, action), "details": f"Execute {action}", "status": "completed"}
+            for action in actions
+        ]
+        self.db.ensure_conversation(conversation_id, title)
+        self.db.upsert_task_run(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            mode="executor",
+            title=title,
+            status="running",
+            progress=0.2,
+            summary="جارٍ تنفيذ المشروع.",
+        )
+        self.db.replace_task_steps(run_id, steps)
+        result = self.project_executor.execute(target_dir=target_dir, actions=actions, allow_external=allow_external)
+        status = "completed" if result["status"] == "completed" else "failed"
+        summary = f"Project execution {status} for {target_dir}."
+        self.db.upsert_task_run(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            mode="executor",
+            title=title,
+            status=status,
+            progress=1.0 if status == "completed" else 0.8,
+            summary=summary,
+        )
+        self.db.replace_task_steps(run_id, steps)
+        self.db.add_telemetry(
+            "project_execute",
+            {
+                "run_id": run_id,
+                "conversation_id": conversation_id,
+                "target_dir": target_dir,
+                "actions": actions,
+                "status": status,
+            },
+        )
+        cards = [
+            {"type": "workflow", "title": "Pipeline", "items": [step["title"] for step in steps]},
+            {
+                "type": "commands",
+                "title": "Execution Results",
+                "items": [
+                    f"{item['command']} -> exit {item['exit_code']} ({item['duration_ms']} ms)"
+                    for item in result["results"]
+                ],
+            },
+        ]
+        if result["fix_notes"]:
+            cards.append({"type": "warning", "title": "Auto Fix Notes", "items": result["fix_notes"]})
+        return {
+            "run_id": run_id,
+            "conversation_id": conversation_id,
+            "status": status,
+            "results": result["results"],
+            "fix_notes": result["fix_notes"],
+            "cards": cards,
+        }
 
     def export_conversation(self, conversation_id: str) -> dict[str, Any]:
         conversations = {item["id"]: item for item in self.db.list_conversations(100)}
